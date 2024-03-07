@@ -12,12 +12,13 @@ class ASRCNN(nn.Module):
                  n_token=35,
                  n_layers=6,
                  token_embedding_dim=256,
-
+                 n_mfcc=40,
+                 n_mels=80,
     ):
         super().__init__()
         self.n_token = n_token
         self.n_down = 1
-        self.to_mfcc = MFCC()
+        self.to_mfcc = MFCC(n_mfcc, n_mels)
         self.init_cnn = ConvNorm(input_dim//2, hidden_dim, kernel_size=7, padding=3, stride=2)
         self.cnns = nn.Sequential(
             *[nn.Sequential(
