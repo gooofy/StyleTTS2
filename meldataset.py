@@ -17,122 +17,108 @@ from torch.utils.data import DataLoader
 import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+from text_utils import TextCleanerEN, TextCleanerDE
 
 import pandas as pd
 
-_pad = "$"
-_punctuation = ';:,.!?¡¿—…"«»“” '
-_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-_letters_ipa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
-
-# Export all symbols:
-symbols = [_pad] + list(_punctuation) + list(_letters) + list(_letters_ipa)
-
-dicts = {}
-for i in range(len((symbols))):
-    dicts[symbols[i]] = i
-
-class TextCleaner:
-    def __init__(self, dummy=None):
-        self.word_index_dictionary = dicts
-    def __call__(self, text):
-        indexes = []
-        for char in text:
-            try:
-                indexes.append(self.word_index_dictionary[char])
-            except KeyError:
-                print(text)
-        return indexes
-
 np.random.seed(1)
 random.seed(1)
-SPECT_PARAMS = {
-    "n_fft": 2048,
-    "win_length": 1200,
-    "hop_length": 300
-}
-MEL_PARAMS = {
-    "n_mels": 80,
-}
 
-to_mel = torchaudio.transforms.MelSpectrogram(
-    n_mels=80, n_fft=2048, win_length=1200, hop_length=300)
-mean, std = -4, 4
-
-def preprocess(wave):
-    wave_tensor = torch.from_numpy(wave).float()
-    mel_tensor = to_mel(wave_tensor)
-    mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
-    return mel_tensor
+#SPECT_PARAMS = {
+#    "n_fft": 2048,
+#    "win_length": 1200,
+#    "hop_length": 300
+#}
+#MEL_PARAMS = {
+#    "n_mels": 80,
+#}
+#
+#to_mel = torchaudio.transforms.MelSpectrogram(
+#    n_mels=80, n_fft=2048, win_length=1200, hop_length=300)
+#mean, std = -4, 4
 
 class FilePathDataset(torch.utils.data.Dataset):
     def __init__(self,
                  data_list,
+                 mel_params,
                  root_path,
+                 lang,
+                 OOD_data,
                  sr=24000,
                  data_augmentation=False,
                  validation=False,
-                 OOD_data="Data/OOD_texts.txt",
                  min_length=50,
                  ):
 
-        spect_params = SPECT_PARAMS
-        mel_params = MEL_PARAMS
+        # spect_params = SPECT_PARAMS
+        # mel_params = MEL_PARAMS
 
         _data_list = [l.strip().split('|') for l in data_list]
         self.data_list = [data if len(data) == 3 else (*data, 0) for data in _data_list]
-        self.text_cleaner = TextCleaner()
+        if lang == 'en':
+            self.text_cleaner = TextCleanerEN()
+        elif lang == 'de':
+            self.text_cleaner = TextCleanerDE()
+        else:
+            raise Exception (f"Sorry, unknown language: {lang}")
+
         self.sr = sr
 
         self.df = pd.DataFrame(self.data_list)
 
-        self.to_melspec = torchaudio.transforms.MelSpectrogram(**MEL_PARAMS)
+        self.to_melspec = torchaudio.transforms.MelSpectrogram(**mel_params)
 
         self.mean, self.std = -4, 4
         self.data_augmentation = data_augmentation and (not validation)
         self.max_mel_length = 192
-        
+
         self.min_length = min_length
         with open(OOD_data, 'r', encoding='utf-8') as f:
             tl = f.readlines()
         idx = 1 if '.wav' in tl[0].split('|')[0] else 0
         self.ptexts = [t.split('|')[idx] for t in tl]
-        
+
         self.root_path = root_path
+
+    def preprocess (self, wave):
+        wave_tensor = torch.from_numpy(wave).float()
+        mel_tensor = self.to_melspec(wave_tensor)
+        mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - self.mean) / self.std
+        return mel_tensor
 
     def __len__(self):
         return len(self.data_list)
 
-    def __getitem__(self, idx):        
+    def __getitem__(self, idx):
         data = self.data_list[idx]
         path = data[0]
-        
+
         wave, text_tensor, speaker_id = self._load_tensor(data)
-        
-        mel_tensor = preprocess(wave).squeeze()
-        
+
+        mel_tensor = self.preprocess(wave).squeeze()
+
         acoustic_feature = mel_tensor.squeeze()
         length_feature = acoustic_feature.size(1)
         acoustic_feature = acoustic_feature[:, :(length_feature - length_feature % 2)]
-        
+
         # get reference sample
         ref_data = (self.df[self.df[2] == str(speaker_id)]).sample(n=1).iloc[0].tolist()
         ref_mel_tensor, ref_label = self._load_data(ref_data[:3])
-        
+
         # get OOD text
-        
+
         ps = ""
-        
+
         while len(ps) < self.min_length:
             rand_idx = np.random.randint(0, len(self.ptexts) - 1)
             ps = self.ptexts[rand_idx]
-            
+
             text = self.text_cleaner(ps)
             text.insert(0, 0)
             text.append(0)
 
             ref_text = torch.LongTensor(text)
-        
+
         return speaker_id, acoustic_feature, text_tensor, ref_text, ref_mel_tensor, ref_label, path, wave
 
     def _load_tensor(self, data):
@@ -144,21 +130,21 @@ class FilePathDataset(torch.utils.data.Dataset):
         if sr != 24000:
             wave = librosa.resample(wave, orig_sr=sr, target_sr=24000)
             print(wave_path, sr)
-            
+
         wave = np.concatenate([np.zeros([5000]), wave, np.zeros([5000])], axis=0)
-        
+
         text = self.text_cleaner(text)
-        
+
         text.insert(0, 0)
         text.append(0)
-        
+
         text = torch.LongTensor(text)
 
         return wave, text, speaker_id
 
     def _load_data(self, data):
         wave, text_tensor, speaker_id = self._load_tensor(data)
-        mel_tensor = preprocess(wave).squeeze()
+        mel_tensor = self.preprocess(wave).squeeze()
 
         mel_length = mel_tensor.size(1)
         if mel_length > self.max_mel_length:
@@ -179,7 +165,7 @@ class Collater(object):
         self.min_mel_length = 192
         self.max_mel_length = 192
         self.return_wave = return_wave
-        
+
 
     def __call__(self, batch):
         # batch[0] = wave, mel, text, f0, speakerid
@@ -207,7 +193,7 @@ class Collater(object):
         ref_labels = torch.zeros((batch_size)).long()
         paths = ['' for _ in range(batch_size)]
         waves = [None for _ in range(batch_size)]
-        
+
         for bid, (label, mel, text, ref_text, ref_mel, ref_label, path, wave) in enumerate(batch):
             mel_size = mel.size(1)
             text_size = text.size(0)
@@ -222,7 +208,7 @@ class Collater(object):
             paths[bid] = path
             ref_mel_size = ref_mel.size(1)
             ref_mels[bid, :, :ref_mel_size] = ref_mel
-            
+
             ref_labels[bid] = ref_label
             waves[bid] = wave
 
@@ -231,17 +217,19 @@ class Collater(object):
 
 
 def build_dataloader(path_list,
+                     mel_params,
                      root_path,
+                     lang,
+                     OOD_data,
                      validation=False,
-                     OOD_data="Data/OOD_texts.txt",
                      min_length=50,
                      batch_size=4,
                      num_workers=1,
                      device='cpu',
                      collate_config={},
                      dataset_config={}):
-    
-    dataset = FilePathDataset(path_list, root_path, OOD_data=OOD_data, min_length=min_length, validation=validation, **dataset_config)
+
+    dataset = FilePathDataset(path_list, mel_params, root_path, lang, OOD_data=OOD_data, min_length=min_length, validation=validation, **dataset_config)
     collate_fn = Collater(**collate_config)
     data_loader = DataLoader(dataset,
                              batch_size=batch_size,

@@ -64,6 +64,7 @@ def main(config_path):
     save_freq = config.get('save_freq', 2)
     log_interval = config.get('log_interval', 10)
     saving_epoch = config.get('save_freq', 2)
+    lang = config.get('lang', 'en')
     
     data_params = config.get('data_params', None)
     sr = config['preprocess_params'].get('sr', 24000)
@@ -74,12 +75,16 @@ def main(config_path):
     OOD_data = data_params['OOD_data']
     
     max_len = config.get('max_len', 200)
+
+    mel_params = config.get('mel_params', {})
     
     # load data
     train_list, val_list = get_data_path_list(train_path, val_path)
 
     train_dataloader = build_dataloader(train_list,
+                                        mel_params,
                                         root_path,
+                                        lang=lang,
                                         OOD_data=OOD_data,
                                         min_length=min_length,
                                         batch_size=batch_size,
@@ -88,7 +93,9 @@ def main(config_path):
                                         device=device)
 
     val_dataloader = build_dataloader(val_list,
+                                      mel_params,
                                       root_path,
+                                      lang=lang,
                                       OOD_data=OOD_data,
                                       min_length=min_length,
                                       batch_size=batch_size,
