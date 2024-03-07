@@ -1,3 +1,12 @@
+
+# Warning: This repo contains experimental modifications for multi-language support
+
+I am trying to train a german-only StyleTTS 2 model at the moment. This repo
+contains my modifications to make this possible. Right now this code is not
+working, please refer to the original repo to get working code:
+
+https://github.com/yl4579/StyleTTS2
+
 # StyleTTS 2: Towards Human-Level Text-to-Speech through Style Diffusion and Adversarial Training with Large Speech Language Models
 
 ### Yinghao Aaron Li, Cong Han, Vinay S. Raghavan, Gavin Mischler, Nima Mesgarani
