@@ -1,4 +1,5 @@
 log_dir: "Models/de"
+lang: "de"
 first_stage_path: "first_stage.pth"
 save_freq: 1
 log_interval: 10
@@ -25,10 +26,16 @@ data_params:
 
 preprocess_params:
   sr: 24000
-  spect_params:
-    n_fft: 2048
-    win_length: 1200
-    hop_length: 300
+#  spect_params:
+#    n_fft: 2048
+#    win_length: 1200
+#    hop_length: 300
+
+mel_params:
+   n_mels: 138
+   n_fft: 2048
+   win_length: 1200
+   hop_length: 300
 
 model_params:
   multispeaker: true
@@ -39,7 +46,7 @@ model_params:
   n_layer: 3
   n_mels: 80
 
-  n_token: 178 # number of phoneme tokens
+  n_token: 138 # number of phoneme tokens
   max_dur: 50 # maximum duration of a single phoneme
   style_dim: 128 # style vector size
 
